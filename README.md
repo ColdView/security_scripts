@@ -1,0 +1,1 @@
+This script is helpful when evading xss filters.
