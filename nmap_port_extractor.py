@@ -8,8 +8,7 @@ import re
 x = 0
 ips = []
 portlist = 0
-#path = str(input("Enter the relative or absolute path to the .nmap file: "))
-path = "../../code/python/projects/multi_nmap/multi-tcp-port-discovery.nmap"
+path = str(input("Enter the relative or absolute path to the .nmap file: "))
 
 with open(path, "r") as file_input:
 	for line in file_input:
@@ -30,6 +29,3 @@ for i in range(len(ips)):
 	with open(ips[x], "w") as file_output:
 		file_output.write(",".join(ports[x]))
 	x+=1
-
-print("portlist = ", portlist)
-print(ports)
