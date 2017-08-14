@@ -1,29 +1,27 @@
 '''
-Python version 3.5.2
 This script parses a .nmap format scan, extracts the port numbers, 
 ip addresses and exports the ports to a csv file under the ip's name.
 '''
 import re
 
 ips = []
-portlist = 0
+x = -1
 path = str(input("Enter the relative or absolute path to the .nmap file: "))
-#-----------------Pull ips and append to ips list------------------
-with open(path, "r") as file_input:
-	for line in file_input:
-		if "report " in line:
+ports = []
+#-----------------Pull IPs and Ports, append to lists------------------
+with open(path, "r") as nmap_scan:
+	for line in nmap_scan:
+		if "scan report " in line:
 			ips.append((line.split("for ")[1]).rstrip())
+			ports.append([])
+			x+=1
+		if re.match("[0-9]+/", line):
+			ports[x].append(line.split("/")[0])
 
-ports = [[] for i in range(len(ips))]
-#---------------Pull ports and append to ports list----------------
-with open(path, "r") as file_input:
-	for line in file_input:		
-		if line == '\n':
-			portlist+=1
-		if re.match("^[0-9]+", line):
-			ports[portlist].append(line.split("/")[0])
-
-#-----Write port lists to ip files
+#---------------Write non-empty port lists to ip files-----------------
 for i in range(len(ips)):	
-	with open(ips[i], "w") as file_output:
-		file_output.write(",".join(ports[i]))
+	if len(ports[i]) > 0:
+		with open(ips[i], "w") as file_output:
+			file_output.write(",".join(ports[i]))
+	else:
+		continue
