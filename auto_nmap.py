@@ -7,10 +7,17 @@ Make sure to include (--) with nmap options as shown in usage!
 
 import argparse
 from libnmap.process import NmapProcess
-from libnmap.parser import NmapParser, NmapParserException
+from libnmap.parser import NmapParser
+import pandas as pd
+
+scanned_hosts = []
+open_ports = []
+services = []
+cpe_list = []
+URL = "https://nvd.nist.gov/vuln/search/results?" \
+          "adv_search=true&cves=on&cpe_version="
 
 
-# start a new nmap scan on localhost with some specific options
 def get_args():
     parser = argparse.ArgumentParser(prog="auto_nmap.py", 
                       usage ="auto_nmap.py 192.168.56.0/24 -- -sV")
@@ -18,13 +25,13 @@ def get_args():
             "-i", "--ip_range", type=str, help="Add the ip_range "
             "for the first stage host scan!", required=True)
     parser.add_argument(
-            "opt", nargs=argparse.REMAINDER)
+            "nmap_options", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     ip_range = args.ip_range
-    opt = " ".join(args.opt[1:])
-    return ip_range, opt
+    nmap_options = " ".join(args.nmap_options[1:])
+    return ip_range, nmap_options
 
-ip_range, opt = get_args()
+ip_range, nmap_options= get_args()
 
 def host_scan():
     nm = NmapProcess(ip_range, options="-sn")
@@ -38,57 +45,44 @@ def host_scan():
 
     return host_list
 
+live_hosts = host_scan()
 
-def do_scan(targets, options):
-    parsed = None
-    nmproc = NmapProcess(targets, options)
-    rc = nmproc.run()
-    if rc != 0:
-        print("nmap scan failed: {0}".format(nmproc.stderr))
-    print(type(nmproc.stdout))
+def port_scan(targets, options):
+    nm = NmapProcess(targets, options)
+    rc = nm.run()
+    parsed_scan = NmapParser.parse(nm.stdout)
+    return parsed_scan
 
-    try:
-        parsed = NmapParser.parse(nmproc.stdout)
-    except NmapParserException as e:
-        print("Exception raised while parsing scan: {0}".format(e.msg))
-
-    return parsed
-
-
-def print_scan(nmap_report):
-    print("Starting Nmap {0} ( http://nmap.org ) at {1}".format(
-        nmap_report.version,
-        nmap_report.started))
-
+def parse_report(nmap_report):
     for host in nmap_report.hosts:
-        if len(host.hostnames):
-            tmp_host = host.hostnames.pop()
-        else:
-            tmp_host = host.address
-
-        print("Nmap scan report for {0} ({1})".format(
-            tmp_host,
-            host.address))
-        print("Host is {0}.".format(host.status))
-        print("  PORT     STATE         SERVICE")
-
+        # Populate lists with each attribute 
         for serv in host.services:
-            pserv = "{0:>5s}/{1:3s}  {2:12s}  {3}".format(
-                    str(serv.port),
-                    serv.protocol,
-                    serv.state,
-                    serv.service)
-            if len(serv.banner):
-                pserv += " ({0})".format(serv.banner)
-            print(pserv)
-    print(nmap_report.summary)
+            if serv.open():
+                scanned_hosts.append(host.address)
+                open_ports.append(serv.port)
+                services.append(serv)
+                cpe = str(serv.cpelist).strip("[]")
+                cpe_list.append('<a href="{u}" target="_blank">{name}</a>' \
+                      .format(u=URL+cpe, name="link"))
+            else:
+                pass
 
+def make_table():
+    df = pd.DataFrame({
+            "Scanned Host": scanned_hosts, 
+            "Service": services, 
+            "Open Port": open_ports, 
+            "Cve Link": cpe_list, 
+        })
 
-hosts = host_scan()
+    table = df[["Scanned Host", "Service", "Open Port", "Cve Link"]]
+    pd.set_option('display.max_colwidth', 250)
+    pd.set_option('max_rows', 100)
+    pd.set_option('colheader_justify', 'left')
+    table.to_html('nmap_table.html', escape=False)
 
-if __name__ == "__main__":
-    report = do_scan(hosts, opt)
+if __name__ == "__main__":    
+    report = port_scan(live_hosts, nmap_options)
     if report:
-        print_scan(report)
-    else:
-        print("No results returned")
+        parse_report(report)
+        make_table()
