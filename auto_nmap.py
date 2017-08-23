@@ -10,13 +10,6 @@ from libnmap.process import NmapProcess
 from libnmap.parser import NmapParser
 import pandas as pd
 
-scanned_hosts = []
-open_ports = []
-services = []
-cpe_list = []
-URL = "https://nvd.nist.gov/vuln/search/results?" \
-          "adv_search=true&cves=on&cpe_version="
-
 
 def get_args():
     parser = argparse.ArgumentParser(prog="auto_nmap.py", 
@@ -27,13 +20,13 @@ def get_args():
     parser.add_argument(
             "nmap_options", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    ip_range = args.ip_range
+    ip_range = args.ip_range    
     nmap_options = " ".join(args.nmap_options[1:])
     return ip_range, nmap_options
 
 ip_range, nmap_options= get_args()
 
-def host_scan():
+def get_hosts():
     nm = NmapProcess(ip_range, options="-sn")
     nm.run()
     nmap_report = NmapParser.parse(nm.stdout)
@@ -45,7 +38,7 @@ def host_scan():
 
     return host_list
 
-live_hosts = host_scan()
+live_hosts = get_hosts()
 
 def port_scan(targets, options):
     nm = NmapProcess(targets, options)
@@ -53,36 +46,50 @@ def port_scan(targets, options):
     parsed_scan = NmapParser.parse(nm.stdout)
     return parsed_scan
 
+def clean_cpe(serv):
+    URL = "https://nvd.nist.gov/vuln/search/results?" \
+              "adv_search=true&cves=on&cpe_version="
+    # Access valid a cpe
+    if serv.cpelist:
+        return URL+str(serv.cpelist[0])
+    else:
+        return "No Link"
+
 def parse_report(nmap_report):
+    scanned_hosts = []
+    open_ports = []
+    services = []
+    url_list = []
     for host in nmap_report.hosts:
-        # Populate lists with each attribute 
         for serv in host.services:
             if serv.open():
-                scanned_hosts.append(host.address)
+                services.append(serv.banner)
                 open_ports.append(serv.port)
-                services.append(serv)
-                cpe = str(serv.cpelist).strip("[]")
-                cpe_list.append('<a href="{u}" target="_blank">{name}</a>' \
-                      .format(u=URL+cpe, name="link"))
-            else:
-                pass
+                scanned_hosts.append(host.address)
+                url_list.append('<a href="{u}" target="_blank">{name}</a>' \
+                      .format(u=clean_cpe(serv), name="link"))
+    return scanned_hosts, open_ports, services, url_list
 
-def make_table():
+
+def make_table(scanned_hosts, open_ports, services, url_list):
     df = pd.DataFrame({
             "Scanned Host": scanned_hosts, 
             "Service": services, 
             "Open Port": open_ports, 
-            "Cve Link": cpe_list, 
+            "Cve Link": url_list, 
         })
 
     table = df[["Scanned Host", "Service", "Open Port", "Cve Link"]]
     pd.set_option('display.max_colwidth', 250)
-    pd.set_option('max_rows', 100)
     pd.set_option('colheader_justify', 'left')
     table.to_html('nmap_table.html', escape=False)
+
 
 if __name__ == "__main__":    
     report = port_scan(live_hosts, nmap_options)
     if report:
-        parse_report(report)
-        make_table()
+        scanned_hosts, open_ports, services, url_list = parse_report(report)
+        make_table(scanned_hosts, open_ports, services, url_list)
+    else:
+        print("No results returned!")
+
